@@ -108,3 +108,7 @@ Every release takes the same steps, and three of them are yours:
 - **A milestone for every release**, patches included, titled from the unit's `milestone` template.
 - **A board per unit** with a **Priority** field (options P0, P1 and P2), when you want Priority set on the issues the sign-off files.
 - **Labels:** `bug`, `enhancement`, `sign-off`, and each unit's `label`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
