@@ -1,0 +1,19 @@
+{
+  "repo": "wardmanm/release-kit",
+  "node": 24,
+  "signer": "Mike",
+  "ci": ["node --test \"scripts/*.test.mjs\""],
+  "units": {
+    "release-kit": {
+      "name": "release-kit",
+      "changelog": "CHANGELOG.md",
+      "versionFiles": [
+        ".claude-plugin/plugin.json",
+        { "file": ".github/workflows/release.yml", "pattern": "KIT_REF: v{version}" }
+      ],
+      "tagPrefix": "v",
+      "milestone": "v{version}",
+      "signOff": "sign-off/{version}.md"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "release-kit",
+  "version": "1.0.0",
+  "description": "One release process: a hand sign-off, prepare, and a publish you approve",
+  "author": { "name": "wardmanm" }
+}

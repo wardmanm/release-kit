@@ -1,0 +1,11 @@
+{
+  "name": "release-kit",
+  "owner": { "name": "wardmanm" },
+  "plugins": [
+    {
+      "name": "release-kit",
+      "source": "./",
+      "description": "One release process: a hand sign-off, prepare, and a publish you approve"
+    }
+  ]
+}
