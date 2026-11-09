@@ -1,0 +1,200 @@
+# The shared release workflow. Each project has one caller per unit, <unit>-release.yml, that calls this with the
+# unit and version (README.md, "The caller workflow"). It's deliberate by design: started by hand only, it verifies
+# the release, then publishing waits for approval in the caller repo's protected `release` environment. It can only
+# be called, never started on its own; scripts/workflows.test.mjs keeps it that way.
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      unit:
+        description: 'The unit to release, as named in release-kit.json'
+        required: true
+        type: string
+      version:
+        description: 'Version to release, without a leading v (e.g. 0.4.0 or 0.5.0-beta.1)'
+        required: true
+        type: string
+
+# Every job asks for its own permissions. Without this default, a job added later that doesn't would run with
+# everything the caller grants (contents: write, issues: write).
+permissions: {}
+
+env:
+  UNIT: ${{ inputs.unit }}
+  VERSION: ${{ inputs.version }}
+  # The kit version this workflow runs: the tag it was released at. prepare bumps it with the kit's version.
+  KIT_REF: v1.0.0
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Must run on main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases are cut from main only. Choose main in the branch dropdown."
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The kit goes outside the project's folder, so the project's own lint and tests never see its files.
+      - name: Get the kit
+        if: github.repository != 'wardmanm/release-kit'
+        uses: actions/checkout@v7
+        with:
+          repository: wardmanm/release-kit
+          ref: ${{ env.KIT_REF }}
+          path: .release-kit
+      - name: Find the kit
+        run: |
+          if [ "$GITHUB_REPOSITORY" = "wardmanm/release-kit" ]; then
+            echo "KIT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          else
+            mv .release-kit "$RUNNER_TEMP/release-kit"
+            echo "KIT=$RUNNER_TEMP/release-kit" >> "$GITHUB_ENV"
+          fi
+
+      - name: Read the project's Node version
+        id: node
+        run: echo "version=$(jq -r .node release-kit.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+
+      # Also checks the unit and the version, before either reaches a file or a command line.
+      - name: Name the release
+        run: node "$KIT/scripts/release.mjs" meta "$VERSION" --unit "$UNIT" >> "$GITHUB_ENV"
+
+      - name: Record the commit being released
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag must not exist yet
+        run: node "$KIT/scripts/release.mjs" tag-absent "$VERSION" --unit "$UNIT"
+
+      - name: The changelog, version files and sign-off are ready
+        run: node "$KIT/scripts/release.mjs" check "$VERSION" --unit "$UNIT"
+
+      - name: The milestone has no open issues
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            | jq -s 'add' \
+            | node "$KIT/scripts/release.mjs" milestone "$VERSION" --unit "$UNIT"
+
+      # Everything the project's CI runs, from release-kit.json's ci list, must pass before anyone is asked to approve.
+      - name: The project's checks
+        run: node "$KIT/scripts/release.mjs" ci --unit "$UNIT"
+
+      - name: Show the release notes
+        run: |
+          {
+            echo "## Release notes for ${TAG}"
+            echo
+            node "$KIT/scripts/release.mjs" notes "$VERSION" --unit "$UNIT"
+            echo
+            echo "> Checks passed. **Publish** is waiting for approval in the \`release\` environment."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish (needs approval)
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      issues: write
+    env:
+      SHA: ${{ needs.verify.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - name: Get the kit
+        if: github.repository != 'wardmanm/release-kit'
+        uses: actions/checkout@v7
+        with:
+          repository: wardmanm/release-kit
+          ref: ${{ env.KIT_REF }}
+          path: .release-kit
+      - name: Find the kit
+        run: |
+          if [ "$GITHUB_REPOSITORY" = "wardmanm/release-kit" ]; then
+            echo "KIT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          else
+            mv .release-kit "$RUNNER_TEMP/release-kit"
+            echo "KIT=$RUNNER_TEMP/release-kit" >> "$GITHUB_ENV"
+          fi
+
+      - name: Read the project's Node version
+        id: node
+        run: echo "version=$(jq -r .node release-kit.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+
+      - name: Name the release
+        run: node "$KIT/scripts/release.mjs" meta "$VERSION" --unit "$UNIT" >> "$GITHUB_ENV"
+
+      # Approval can come long after verify: check again right before anything permanent happens.
+      - name: Check the tag and milestone again
+        run: |
+          node "$KIT/scripts/release.mjs" tag-absent "$VERSION" --unit "$UNIT"
+          milestone=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            | jq -s 'add' \
+            | node "$KIT/scripts/release.mjs" milestone "$VERSION" --unit "$UNIT")
+          echo "MILESTONE_NUMBER=$(jq -r '.number' <<< "$milestone")" >> "$GITHUB_ENV"
+          echo "MILESTONE_URL=$(jq -r '.url' <<< "$milestone")" >> "$GITHUB_ENV"
+
+      - name: Build the release notes
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues?milestone=${MILESTONE_NUMBER}&state=closed&per_page=100" \
+            | jq -s '[add // [] | .[] | select(.pull_request | not)]' > "$RUNNER_TEMP/milestone-issues.json"
+          jq -r '.[].number' "$RUNNER_TEMP/milestone-issues.json" > "$RUNNER_TEMP/milestone-issues.txt"
+          {
+            node "$KIT/scripts/release.mjs" notes "$VERSION" --unit "$UNIT"
+            echo
+            echo "---"
+            echo
+            echo "**Milestone:** [${MILESTONE}](${MILESTONE_URL})"
+            echo
+            echo "**Closed issues:**"
+            echo
+            jq -r '.[] | "- #\(.number) \(.title)"' "$RUNNER_TEMP/milestone-issues.json"
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Create the GitHub release
+        run: |
+          flags=()
+          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" \
+            --target "$SHA" \
+            --title "$RELEASE_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "${flags[@]}"
+
+      - name: Close the milestone
+        run: gh api -X PATCH "repos/${GITHUB_REPOSITORY}/milestones/${MILESTONE_NUMBER}" -f state=closed
+
+      # Record on each issue where it shipped. Best effort: the release already exists at this point,
+      # so a missing or unexpected issue number is a warning, not a failure.
+      - name: Mark issues as released
+        run: |
+          url=$(gh release view "$TAG" --json url --jq .url)
+          { node "$KIT/scripts/release.mjs" issues "$VERSION" --unit "$UNIT"; cat "$RUNNER_TEMP/milestone-issues.txt"; } | sort -un |
+            while read -r n; do
+              gh issue comment "$n" --body "Released in ${RELEASE_NAME}: ${url}" \
+                || echo "::warning::Could not comment on #${n}"
+            done

@@ -1,0 +1,30 @@
+# Cuts a release of release-kit itself, through the same workflow every project calls.
+# Start it from the Actions tab on main, with the version. Publishing waits for approval in this repo's
+# `release` environment.
+name: release-kit release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without a leading v (e.g. 1.0.0)'
+        required: true
+        type: string
+
+# One release at a time; a run waiting for approval holds the next one back.
+concurrency:
+  group: release-kit-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    # The most the release may do; its verify job asks for less.
+    permissions:
+      contents: write
+      issues: write
+    with:
+      unit: release-kit
+      version: ${{ inputs.version }}
