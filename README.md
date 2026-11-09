@@ -29,7 +29,9 @@ Or commit this to the project's `.claude/settings.json`, so the plugin is offere
 
 On a machine with no GitHub SSH key, such as a fresh Windows install, set `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` first. Update with `claude plugin update release-kit@release-kit`, between releases and never during a sign-off.
 
-Then run `/release <unit> <version>`, or `/release <version>` in a repo with one unit.
+Then run `/release <unit> <version>`, or `/release <version>` in a repo with one unit. If the project also has a skill called `release`, delete it, or use `/release-kit:release`.
+
+To try a change to the kit before releasing it, run Claude Code with `--plugin-dir <your clone of release-kit>`.
 
 ## The config file
 
