@@ -9,6 +9,16 @@ const fail = (message) => {
   throw new Error(`${CONFIG_FILE}: ${message}`);
 };
 
+const TOP_FIELDS = ['repo', 'node', 'signer', 'specs', 'ci', 'units'];
+const UNIT_FIELDS = ['name', 'changelog', 'versionFiles', 'tagPrefix', 'milestone', 'signOff', 'label', 'board', 'prepareSteps'];
+
+// A misspelt optional field would silently turn off what it controls, so every field must be one we know.
+function knownFields(value, allowed, at) {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) fail(`${at}${key} is not a field: use ${allowed.join(', ')}`);
+  }
+}
+
 const isString = (v) => typeof v === 'string' && v.length > 0;
 const isStringList = (v) => Array.isArray(v) && v.every(isString);
 
@@ -38,6 +48,7 @@ function readVersionFiles(value, path) {
 function readUnit(id, value) {
   const at = `units.${id}`;
   if (value === null || typeof value !== 'object' || Array.isArray(value)) fail(`${at} must be an object`);
+  knownFields(value, UNIT_FIELDS, `${at}.`);
   const unit = {
     id,
     name: requireString(value.name, `${at}.name`),
@@ -70,6 +81,7 @@ export function loadConfig(root) {
     fail(`not valid JSON (${e.message})`);
   }
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) fail('must be a JSON object');
+  knownFields(raw, TOP_FIELDS, '');
 
   const repo = requireString(raw.repo, 'repo');
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) fail('repo must be owner/name, e.g. wardmanm/rollcall_derby');

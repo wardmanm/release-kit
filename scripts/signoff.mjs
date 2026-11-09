@@ -32,6 +32,18 @@ export function parseSignOff(text) {
 
 const FAILED = /^fail: .+ \(#(\d+), (P[012])\)$/;
 
+// The notes listed under "## Found while testing" that couldn't be filed, e.g. because gh was offline.
+export function unfiledNotes(text) {
+  const normal = text.replace(/\r\n/g, '\n');
+  const start = normal.search(/^## Found while testing\s*$/m);
+  if (start === -1) return [];
+  const section = normal.slice(start).split('\n').slice(1);
+  const end = section.findIndex((line) => /^#{1,2} /.test(line));
+  return (end === -1 ? section : section.slice(0, end))
+    .map((line) => /^- not filed: (.+)$/.exec(line.trim())?.[1])
+    .filter(Boolean);
+}
+
 // What keeps the record from letting the release through: every check must have passed, or failed with only a P1
 // or P2 bug, and the signer must have signed it off. Each problem names its check.
 export function signOffErrors(text, { file, releaseName, signer = 'the signer' }) {
@@ -55,6 +67,9 @@ export function signOffErrors(text, { file, releaseName, signer = 'the signer' }
         `${which} has an unreadable result ${JSON.stringify(result)}: use pass, skip, pending or fail: <what happened> (#<issue>, P1)`,
       );
     }
+  }
+  for (const note of unfiledNotes(text)) {
+    errors.push(`${file} has a note that was never filed, ${JSON.stringify(note)}: file it, then put its issue in place of "not filed"`);
   }
   if (!signedOff) {
     errors.push(`${file} isn’t signed off: add "Signed off: YYYY-MM-DD by ${signer}" once ${signer} signs it off`);

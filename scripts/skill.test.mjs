@@ -39,3 +39,22 @@ test('every file-issue.mjs flag it uses exists', () => {
   assert.ok(flags.includes('--priority'), 'the skill should file issues with file-issue.mjs');
   for (const flag of flags) assert.ok(FILE_ISSUE_FLAGS.includes(flag), flag);
 });
+
+test('the skill makes no exception for tagging, publishing, or starting or approving the workflow', () => {
+  const rule = SKILL.split('\n').find((line) => /^- Never .*tag/.test(line));
+  assert.ok(rule, 'the never-tag rule');
+  assert.match(rule, /approve/);
+  assert.doesNotMatch(rule, /unless/i);
+});
+
+test('a blocked release is never "fixed" by changing a result', () => {
+  assert.match(SKILL, /Never change a result without the user/);
+  assert.doesNotMatch(SKILL, /so fix it/);
+  assert.doesNotMatch(SKILL, /fix what it reports/);
+});
+
+test("issue titles are single-quoted, so backticks and $ in them stay as typed", () => {
+  const line = SKILL.split('\n').find((l) => l.includes('file-issue.mjs" --unit'));
+  assert.match(line, /--title '<title>'/);
+  assert.doesNotMatch(SKILL, /--title "/);
+});

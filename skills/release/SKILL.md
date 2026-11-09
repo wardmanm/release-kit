@@ -11,7 +11,8 @@ The user ran `/release $ARGUMENTS`. **You prepare; the user publishes.**
 
 ## Rules
 
-- Never push, create or push a tag, create a GitHub Release, or start or approve a release workflow, unless the user tells you to in this conversation, for this version. Push or open a PR only when asked.
+- Never create or push a release tag, create a GitHub Release, or start or approve a release workflow. The workflow creates the tag and the release; only the user starts it and approves it.
+- Push or open a PR only when the user asks.
 - The user decides. You propose; they confirm the list of checks, each issue (title, kind, unit, Priority, milestone) and the sign-off. Nothing goes to GitHub before they confirm it.
 - Your own testing stays out of the record. If something you try yourself fails, tell the user it's a probable bug, for them to keep or dismiss.
 - Here, `release.mjs <command>` means `node "${CLAUDE_PLUGIN_ROOT}/scripts/release.mjs" <command>`, run from the repo root. Keep the quotes: the plugin's folder may have spaces in it.
@@ -92,7 +93,8 @@ For each note:
    ```
 
 7. **Wait for the user** to confirm or change the drafts. Then file each one:
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/file-issue.mjs" --unit <its unit> --kind <bug|change|feat> --priority <P0|P1|P2> --title "<title>" --label sign-off [--milestone "<milestone>"] --body-file - <<'EOF'` … `EOF`
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/file-issue.mjs" --unit <its unit> --kind <bug|change|feat> --priority <P0|P1|P2> --title '<title>' --label sign-off [--milestone '<milestone>'] --body-file - <<'EOF'` … `EOF`
+   Single quotes keep backticks and `$` in a title as typed. Write a `'` inside one as `'\''`.
    It prints the issue's number, and whether Priority was set on the board. If it wasn't, pass on its note so the user can set it by hand.
 8. **List it in the record,** under `## Found while testing` below the table (add the heading after a blank line if it isn't there): `- #<N> <Kind>, <P>, while on check <n>: <title>`.
 9. **If filing fails,** nothing was filed. Write `- not filed: <Kind>, <P>, while on check <n>: <title>` instead, tell the user what gh said, and offer to try again.
@@ -114,16 +116,16 @@ If main has moved past `Tested:` (a P0 fix, or other work):
 
 ### Sign it off (gate 2)
 
-1. When every check has a result, run the milestone check again. If the milestone has open issues, list them and stop: it can't be signed off yet.
+1. When every check has a result, look for what still blocks the release: a check that's `pending` or `skip`, one that failed with a P0, a `not filed:` note, or an open issue in the milestone (run the milestone check again). If there's any, list it and stop: the release can't be signed off yet. Offer to try those checks again, or to file the note. Never change a result without the user.
 2. Show the table, and the Found while testing list, then ask: "Sign off <unit> <version>?"
-3. On yes, add `Signed off: <today> by <signer>` below `Tested:`, run `release.mjs check <version> --unit <unit>`, and commit. Until prepare runs, it also reports the changelog and version files; any sign-off error in it means the record is wrong, so fix it.
+3. On yes, add `Signed off: <today> by <signer>` below `Tested:`, run `release.mjs check <version> --unit <unit>`, and commit. Until prepare runs, it also reports the changelog and version files. If it reports a sign-off problem, the record doesn't say what the user decided: show them the problem, and change only what they confirm.
 4. Changing a result afterwards removes the `Signed off:` line until the user is asked again.
 
 ## 5. Prepare
 
 1. Run `release.mjs prepare <version> --unit <unit>`.
 2. Work through each of the unit's `prepareSteps` with the user.
-3. Run `release.mjs check <version> --unit <unit>`, and fix what it reports.
+3. Run `release.mjs check <version> --unit <unit>`. It should pass: show the user anything it reports, and fix the changelog or version files with them. A sign-off problem goes back to "Sign it off".
 4. Show `git diff`, and read the notes through with the user: one bullet per change someone would notice, written for them. Flag jargon, and anything that isn't such a change. Edit only what they ask.
 5. Commit once they confirm: `chore(<unit>): prepare v<version>`.
 

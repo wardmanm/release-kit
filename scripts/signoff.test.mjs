@@ -56,7 +56,7 @@ test('parseSignOff and signOffErrors ignore the Found while testing list below t
     '## Found while testing',
     '',
     '- #45 Bug, P2, while on check 1: Logo picker | jumps when a team has no league',
-    '- not filed: Feat, P1, while on check 2: Sort teams by league',
+    '- #46 Feat, P1, while on check 2: Sort teams by league',
     '',
   ].join('\n');
   assert.deepEqual(
@@ -93,5 +93,19 @@ test('signOffErrors refuses a record that isn’t signed off, names another rele
   assert.deepEqual(errorsFor(signOffRecord([])), ['rcl-core/sign-off/0.1.0.md has no checks']);
   assert.deepEqual(errorsFor(signOffRecord(['pass']).replace(/^Tested: .*\n/m, '')), [
     'rcl-core/sign-off/0.1.0.md needs the commit that was tested: Tested: `<sha>` on YYYY-MM-DD',
+  ]);
+});
+
+test('signOffErrors refuses a note that was never filed, so a P0 can’t slip past the milestone', () => {
+  const record = [
+    signOffRecord(['pass']),
+    '## Found while testing',
+    '',
+    '- #45 Bug, P2, while on check 1: Logo picker jumps',
+    '- not filed: Bug, P0, while on check 1: Import loses photos',
+    '',
+  ].join('\n');
+  assert.deepEqual(errorsFor(record), [
+    'rcl-core/sign-off/0.1.0.md has a note that was never filed, "Bug, P0, while on check 1: Import loses photos": file it, then put its issue in place of "not filed"',
   ]);
 });

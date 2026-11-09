@@ -14,7 +14,7 @@
 //   node release.mjs pinned [--unit <id>]                print the kit version the unit's caller workflow pins
 //   node release.mjs ci [--unit <id>]                    run the config's ci commands in order
 //   --unit is needed when the repo has more than one unit. --root <dir> is the project (default: the current folder).
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -85,39 +85,52 @@ function expand(root, glob) {
 const patternRegExp = (pattern) =>
   new RegExp(escapeRegExp(pattern).replace(escapeRegExp('{version}'), `(${SEMVER_TEXT})`), 'gm');
 
-// Each version file as {file, read(): version | null, write(version)}. Throws for an entry that names nothing.
+function jsonTarget(root, file) {
+  let data;
+  try {
+    data = JSON.parse(readFileSync(join(root, file), 'utf8'));
+  } catch (e) {
+    throw new Error(`${file}: not valid JSON (${e.message})`);
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error(`${file}: must be a JSON object`);
+  return { file, version: data.version ?? null, render: (version) => JSON.stringify({ ...data, version }, null, 2) + '\n' };
+}
+
+function patternTarget(root, { file, pattern }) {
+  const path = join(root, file);
+  if (!existsSync(path)) throw new Error(`versionFiles "${file}" matches no file`);
+  const text = readFileSync(path, 'utf8');
+  const found = [...text.matchAll(patternRegExp(pattern))];
+  if (!found.length) throw new Error(`${file} has no line matching ${JSON.stringify(pattern)}`);
+  return {
+    file,
+    version: found.map((m) => m[1]).find((v) => v !== found[0][1]) ?? found[0][1],
+    render: (version) => text.replace(patternRegExp(pattern), fill(pattern, version)),
+  };
+}
+
+// Every version file, read and parsed up front, as {file, version, render(version) → new text}, plus a problem for
+// each entry that names nothing or can't be read. prepare refuses on any problem; check reports them all.
 function versionTargets(root, unit) {
   const targets = [];
-  for (const entry of unit.versionFiles) {
-    if (typeof entry === 'string') {
-      const files = expand(root, entry);
-      if (!files.length) throw new Error(`versionFiles "${entry}" matches no file`);
-      for (const file of files) {
-        const path = join(root, file);
-        targets.push({
-          file,
-          read: () => JSON.parse(readFileSync(path, 'utf8')).version ?? null,
-          write: (version) => {
-            const data = JSON.parse(readFileSync(path, 'utf8'));
-            data.version = version;
-            writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-          },
-        });
-      }
-    } else {
-      const path = join(root, entry.file);
-      if (!existsSync(path)) throw new Error(`versionFiles "${entry.file}" matches no file`);
-      const text = readFileSync(path, 'utf8');
-      const found = [...text.matchAll(patternRegExp(entry.pattern))];
-      if (!found.length) throw new Error(`${entry.file} has no line matching ${JSON.stringify(entry.pattern)}`);
-      targets.push({
-        file: entry.file,
-        read: () => found.map((m) => m[1]).find((v) => v !== found[0][1]) ?? found[0][1],
-        write: (version) => writeFileSync(path, text.replace(patternRegExp(entry.pattern), fill(entry.pattern, version))),
-      });
+  const errors = [];
+  const attempt = (make) => {
+    try {
+      targets.push(make());
+    } catch (e) {
+      errors.push(e.message);
     }
+  };
+  for (const entry of unit.versionFiles) {
+    if (typeof entry !== 'string') {
+      attempt(() => patternTarget(root, entry));
+      continue;
+    }
+    const files = expand(root, entry);
+    if (!files.length) errors.push(`versionFiles "${entry}" matches no file`);
+    for (const file of files) attempt(() => jsonTarget(root, file));
   }
-  return targets;
+  return { targets, errors };
 }
 
 // ---------- prepare / check / notes ----------
@@ -132,9 +145,11 @@ export function prepare(root, unit, version, { date = new Date().toISOString().s
     repoUrl,
     tagPrefix: unit.tagPrefix,
   });
-  const targets = versionTargets(root, unit);
+  const { targets, errors } = versionTargets(root, unit);
+  if (errors.length) throw new Error(errors[0]);
+  const writes = targets.map((t) => [t.file, t.render(version)]);
   writeFileSync(join(root, unit.changelog), changelog);
-  for (const target of targets) target.write(version);
+  for (const [file, text] of writes) writeFileSync(join(root, file), text);
   return { files: [unit.changelog, ...new Set(targets.map((t) => t.file))] };
 }
 
@@ -166,13 +181,10 @@ export function check(root, unit, version, { signer } = {}) {
   if (previous && compareVersions(version, previous) <= 0) {
     errors.push(`${version} is not greater than the previous release ${previous}`);
   }
-  try {
-    for (const target of versionTargets(root, unit)) {
-      const actual = target.read();
-      if (actual !== version) errors.push(`${target.file} has version ${actual ?? '(none)'}, expected ${version}`);
-    }
-  } catch (e) {
-    errors.push(e.message);
+  const files = versionTargets(root, unit);
+  errors.push(...files.errors);
+  for (const { file: target, version: actual } of files.targets) {
+    if (actual !== version) errors.push(`${target} has version ${actual ?? '(none)'}, expected ${version}`);
   }
   const record = fill(unit.signOff, version);
   if (!existsSync(join(root, record))) {
@@ -300,6 +312,15 @@ export function main(args, { cwd = process.cwd() } = {}) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Run as a script, including through a symlinked folder: Node loads the main module from its real path.
+export function isMain(metaUrl) {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

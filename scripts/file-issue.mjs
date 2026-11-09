@@ -11,8 +11,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { loadConfig, unitOf } from './config.mjs';
+import { isMain } from './release.mjs';
 
 const KIND_LABEL = { bug: 'bug', change: 'enhancement', feat: 'enhancement' };
 const PRIORITIES = ['P0', 'P1', 'P2'];
@@ -139,6 +139,6 @@ async function main(args) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   process.exitCode = await main(process.argv.slice(2));
 }

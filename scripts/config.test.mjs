@@ -101,3 +101,14 @@ test('unitOf requires an id when there are several units', () => {
 test('fill replaces every {version}', () => {
   assert.equal(fill('rcl-core v{version} ({version})', '0.4.0'), 'rcl-core v0.4.0 (0.4.0)');
 });
+
+test("loadConfig rejects a field it doesn't know, at the top level or in a unit, listing the ones it does", () => {
+  assert.throws(
+    () => loadConfig(rootWith(config({ units: { x: unit({ bord: 6 }) } }))),
+    /^Error: release-kit\.json: units\.x\.bord is not a field: use name, changelog, versionFiles, tagPrefix, milestone, signOff, label, board, prepareSteps$/,
+  );
+  assert.throws(
+    () => loadConfig(rootWith(config({ spec: 'docs' }))),
+    /^Error: release-kit\.json: spec is not a field: use repo, node, signer, specs, ci, units$/,
+  );
+});

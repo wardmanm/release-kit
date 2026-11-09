@@ -1,7 +1,7 @@
 // Tests for release.mjs, much of it ported from Rollcall's scripts/release.test.mjs. Run: node --test "scripts/*.test.mjs"
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,7 @@ import {
   signOffRecord,
   pkg,
   REPO_URL,
+  tempDir,
 } from './test-helpers.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'release.mjs');
@@ -353,4 +354,44 @@ test('ci runs each command in order and stops at the first failure', () => {
 test('ci passes when every command does', () => {
   const out = cli(['ci', '--unit', 'rcl-core', '--root', repo()]);
   assert.equal(out.status, 0, out.stderr);
+});
+
+test("prepare changes nothing when a version file isn't valid JSON, and names it", () => {
+  const root = repo({
+    [LOG]: FIRST,
+    'rcl-core/aaa/package.json': pkg('0.0.0'),
+    'rcl-core/bbb/package.json': '{ "version": ',
+  });
+  assert.throws(() => prepare(root, unitIn(root), '0.1.0', DATE), /^Error: rcl-core\/bbb\/package\.json: not valid JSON/);
+  assert.equal(read(root, LOG), FIRST);
+  assert.equal(read(root, 'rcl-core/aaa/package.json'), pkg('0.0.0'));
+});
+
+test("check names a version file that isn't valid JSON, and still checks the others", () => {
+  const root = repo({
+    [LOG]: FIRST_PREPARED,
+    'rcl-core/aaa/package.json': '[]',
+    'rcl-core/bbb/package.json': '{ "version": ',
+    'rcl-core/ccc/package.json': pkg('0.0.1'),
+    ...SIGNED,
+  });
+  const errors = checkIn(root);
+  assert.ok(errors.some((e) => /^rcl-core\/aaa\/package\.json: must be a JSON object$/.test(e)), errors.join('\n'));
+  assert.ok(errors.some((e) => /^rcl-core\/bbb\/package\.json: not valid JSON/.test(e)), errors.join('\n'));
+  assert.ok(errors.includes('rcl-core/ccc/package.json has version 0.0.1, expected 0.1.0'), errors.join('\n'));
+});
+
+test('the scripts run when the plugin folder is reached through a symlink with a space in its name', () => {
+  const kit = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const holder = join(tempDir('kit-link-'), 'link test');
+  mkdirSync(holder);
+  symlinkSync(kit, join(holder, 'kit'));
+  const viaLink = (script, args) =>
+    spawnSync(process.execPath, [join(holder, 'kit', 'scripts', script), ...args], { encoding: 'utf8' });
+  const name = viaLink('release.mjs', ['name', '0.1.0', '--unit', 'rcl-core', '--root', repo()]);
+  assert.equal(name.status, 0, name.stderr);
+  assert.equal(name.stdout, 'Rollcall Core v0.1.0\n');
+  const usage = viaLink('file-issue.mjs', []);
+  assert.equal(usage.status, 2);
+  assert.match(usage.stderr, /^usage: file-issue\.mjs/);
 });
