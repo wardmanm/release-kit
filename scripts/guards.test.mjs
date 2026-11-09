@@ -1,37 +1,10 @@
 // Ported from Rollcall's scripts/release.test.mjs, plus pinnedKitRef. Run: node --test "scripts/*.test.mjs"
-import { test, after } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { tagStatus, milestoneCheck, issueRefs, pinnedKitRef } from './guards.mjs';
-
-const roots = [];
-after(() => roots.forEach((r) => rmSync(r, { recursive: true, force: true })));
-
-function git(cwd, ...args) {
-  const r = spawnSync(
-    'git',
-    ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args],
-    { cwd, encoding: 'utf8' },
-  );
-  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
-}
-
-function gitRepoWithRemote(tags) {
-  const root = mkdtempSync(join(tmpdir(), 'kit-git-'));
-  roots.push(root);
-  const remote = join(root, 'remote.git');
-  const work = join(root, 'work');
-  git(root, 'init', '-q', '--bare', remote);
-  git(root, 'init', '-q', work);
-  git(work, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'x');
-  git(work, 'remote', 'add', 'origin', remote);
-  for (const tag of tags) git(work, 'tag', tag);
-  git(work, 'push', '-q', '--tags', 'origin', 'HEAD:refs/heads/main');
-  return work;
-}
+import { gitRepoWithRemote, tempDir } from './test-helpers.mjs';
 
 test('tagStatus reports an existing release tag', () => {
   assert.equal(tagStatus('rcl-core-v0.1.0', { cwd: gitRepoWithRemote(['rcl-core-v0.1.0']) }), 'exists');
@@ -106,8 +79,7 @@ test('issueRefs lists each referenced issue once, in order, ignoring headings, U
 });
 
 function repoWithCaller(unit, text) {
-  const root = mkdtempSync(join(tmpdir(), 'kit-caller-'));
-  roots.push(root);
+  const root = tempDir('kit-caller-');
   if (text !== undefined) {
     mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
     writeFileSync(join(root, '.github', 'workflows', `${unit}-release.yml`), text);

@@ -2,76 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseChangelog, formatChangelog, moveUnreleased } from './changelog.mjs';
+import { REPO_URL, HEADER, FIRST, FIRST_PREPARED, SECOND, SECOND_PREPARED } from './test-helpers.mjs';
 
-const REPO_URL = 'https://github.com/o/r';
 const OPTS = { repoUrl: REPO_URL, tagPrefix: 'rcl-core-v' };
 const move = (text, version, date) => moveUnreleased(text, { ...OPTS, version, date });
-
-const HEADER = '# Changelog\n\nAll notable changes are documented here.';
-
-const FIRST = `${HEADER}
-
-## [Unreleased]
-
-### Added
-
-- Team Builder (#12)
-
-[Unreleased]: ${REPO_URL}/commits/main
-`;
-
-const FIRST_PREPARED = `${HEADER}
-
-## [Unreleased]
-
-## [0.1.0] - 2026-10-14
-
-### Added
-
-- Team Builder (#12)
-
-[Unreleased]: ${REPO_URL}/compare/rcl-core-v0.1.0...HEAD
-[0.1.0]: ${REPO_URL}/releases/tag/rcl-core-v0.1.0
-`;
-
-const SECOND = `${HEADER}
-
-## [Unreleased]
-
-### Fixed
-
-- Roster paging (#20)
-
-## [0.1.0] - 2026-10-14
-
-### Added
-
-- Team Builder (#12)
-
-[Unreleased]: ${REPO_URL}/compare/rcl-core-v0.1.0...HEAD
-[0.1.0]: ${REPO_URL}/releases/tag/rcl-core-v0.1.0
-`;
-
-const SECOND_PREPARED = `${HEADER}
-
-## [Unreleased]
-
-## [0.2.0] - 2026-11-01
-
-### Fixed
-
-- Roster paging (#20)
-
-## [0.1.0] - 2026-10-14
-
-### Added
-
-- Team Builder (#12)
-
-[Unreleased]: ${REPO_URL}/compare/rcl-core-v0.2.0...HEAD
-[0.2.0]: ${REPO_URL}/releases/tag/rcl-core-v0.2.0
-[0.1.0]: ${REPO_URL}/releases/tag/rcl-core-v0.1.0
-`;
 
 const EMPTY_HEADINGS = FIRST.replace('- Team Builder (#12)\n\n', '');
 

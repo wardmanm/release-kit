@@ -2,30 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSignOff, signOffErrors } from './signoff.mjs';
+import { signOffRecord } from './test-helpers.mjs';
 
 const FILE = 'rcl-core/sign-off/0.1.0.md';
 const errorsFor = (text) => signOffErrors(text, { file: FILE, releaseName: 'Rollcall Core v0.1.0', signer: 'Mike' });
-
-// A sign-off record for Rollcall Core 0.1.0 with one check per result, signed off unless `signedOff` is null.
-function signOffRecord(
-  results = ['pass'],
-  { title = 'Sign-off: Rollcall Core v0.1.0', signedOff = 'Signed off: 2026-10-14 by Mike' } = {},
-) {
-  return [
-    `# ${title}`,
-    '',
-    'Tested: `abc1234` on 2026-10-14',
-    ...(signedOff ? [signedOff] : []),
-    '',
-    '| # | Feature | Planned | Try | Expect | Result |',
-    '|---|---|---|---|---|---|',
-    ...results.map(
-      (result, n) =>
-        `| ${n + 1} | Team Builder (#12) | team-builder R${n + 1} | Add a team | It's listed | ${result} |`,
-    ),
-    '',
-  ].join('\n');
-}
 
 test('parseSignOff reads the title, the tested commit, the sign-off date and each check, unescaping pipes', () => {
   const text = signOffRecord(['pass', 'fail: shows A \\| B (#40, P1)']);
